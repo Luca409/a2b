@@ -1,0 +1,21 @@
+{
+	first_name: <String>,
+	phone_number: <String>,
+	term_code: <int>,
+	email: <String>,
+	password: <String>,
+	home_address: {
+			lat: <int>,
+			long: <int>
+	},
+	class_schedule: [
+			{class_id:<int>, subject_code:<String>, catalog_number:<int>, days:<String>, times:<String>, location:<String>}
+	],
+	bus_schedule: [
+			{active:<boolean>, type:<String>, class_id:<int>, advance_notice:<int>, start_stop_number:<int>, end_stop_number:<int>, start_stop_to_class_minutes:<int>}
+	]
+}
+
+
+
+//type in bus schedule is for home or class

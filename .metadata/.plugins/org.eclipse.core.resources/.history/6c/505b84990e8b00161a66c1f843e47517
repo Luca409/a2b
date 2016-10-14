@@ -1,0 +1,336 @@
+
+import org.json.JSONObject;
+import org.json.JSONArray;
+
+
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.OutputStreamWriter;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.net.URLEncoder;
+import javax.servlet.ServletException;
+import javax.servlet.http.HttpServlet;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+
+import com.twilio.sdk.TwilioRestClient;
+import com.twilio.sdk.TwilioRestException;
+import com.twilio.sdk.resource.factory.MessageFactory;
+import com.twilio.sdk.resource.instance.Message;
+import org.apache.http.NameValuePair;
+import org.apache.http.message.BasicNameValuePair;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.time.*;
+
+
+public class main {
+
+	public static final String ACCOUNT_SID = "ACf2cc186442e189355e14637dd90b6e3c";
+	public static final String AUTH_TOKEN = "98fb38635fe4893ef2ae23178f12a166";
+
+	public static void main(String[] args) {
+
+		TwilioRestClient client = new TwilioRestClient(ACCOUNT_SID, AUTH_TOKEN); //set up ^^^
+
+		String readInString = "";
+		int busNumber = 0;
+		int busTime = 0;				//variable declaration
+		int stopNumber = 0;
+
+
+		while(true)
+		{	
+/*
+			try{
+				System.out.println("Sleep for 30 seconds");
+				Thread.sleep(1000 * 30); //check for bus every 30 seconds
+			}catch(InterruptedException e){
+				System.out.println("got interrupted!");
+			} */
+
+			if(shouldSleep()) {
+				continue;
+			} 
+
+			try {
+				URL url = new URL("http://mbus.doublemap.com/map/v2/eta?stop=71");
+				readInString = getJSONString(url);
+				stopNumber = getStopNumber(readInString); //retrieve JSON
+				readInString = fixJSON(readInString);
+
+				JSONObject convertedJSONObject = new JSONObject(readInString);
+				JSONArray incomingBusArray = convertedJSONObject.getJSONArray("etas");
+
+				if(stopActive(incomingBusArray)) //check if stop is active (there are incoming buses)
+				{
+					int index = getBusArrayIndex(incomingBusArray);
+					busNumber = incomingBusArray.getJSONObject(index).getInt("bus_id"); //get bus info
+					busTime = incomingBusArray.getJSONObject(index).getInt("avg");
+
+					if(busTime > 7 && busTime < 13) //make sure bus is coming between 8 and 12 minutes
+					{
+						sendSMS(busTime, busNumber, stopNumber, client);
+						System.out.println(getBusName(busNumber) + " will be at " + getStopName(stopNumber) + 
+								" stop in " + busTime + " minutes!");
+						try{
+							Thread.sleep(1000 * 60 * 60); //sleep for an hour once message is sent
+						}catch(InterruptedException e){
+							System.out.println("got interrupted!");
+						}
+					}
+				} else
+				{
+					System.out.println("Northwood Express to North Campus is not running at this time");
+				}
+			} catch (Exception ex) {
+				ex.printStackTrace();
+			}
+		} 	
+	}
+
+	public static int getStopNumber(String input) { //getStopNumber from specific stop JSON
+		int retInt = 0;
+		input = input.substring(0, input.indexOf('\"'));
+		retInt = Integer.parseInt(input);
+
+		return retInt;
+	}
+
+	public static String fixJSON(String unfiltered){ //cut off the beginning of specific stop JSON (twice)
+		if(unfiltered.substring(2, 6).equals("etas"))
+		{
+			unfiltered = unfiltered.substring(11, unfiltered.length());
+			return unfiltered;	
+		} else 
+		{
+			unfiltered = unfiltered.substring(unfiltered.indexOf('{'), unfiltered.length());
+			return unfiltered;
+		}
+	}
+
+	public static String getBusName(int busNumber) //get the name of the bus from the number
+	{
+		if(busNumber == 3044)
+		{
+			return "Oxford Shuttle";
+		}
+
+		if(busNumber == 3118 || busNumber == 3047 || busNumber == 3048 || busNumber == 3030 || busNumber == 3020 || busNumber == 3028 
+				|| busNumber == 3031)
+		{
+			return "Northwood Express to North Campus";
+		}
+
+		return "*bus name not found*";
+	}
+
+	public static String getStopName(int stopNumber) //get stop name from big "stops" JSON
+	{
+
+		String returnString;
+
+		try{
+			URL url = new URL("http://mbus.doublemap.com/map/v2/stops");
+			BufferedReader br = new BufferedReader(new InputStreamReader(url.openStream()));
+			returnString = br.readLine();
+			JSONArray stops = new JSONArray(returnString);
+			for(int i = 0; i < stops.length(); i++)
+			{
+				if(stops.getJSONObject(i).getInt("id") == stopNumber)
+				{
+					return stops.getJSONObject(i).getString("name");
+				}
+			}
+		} catch (Exception ex) {
+			ex.printStackTrace();
+		}
+		return "*stop name not found*";
+	}
+
+	public static boolean isNwx(int busNumber) //check if the bus number is a northwood express
+	{
+		if(busNumber == 3118)
+		{
+			return true;
+		} else if (busNumber == 3047)
+		{
+			return true;
+		} else if (busNumber == 3048)
+		{
+			return true;
+		} else if (busNumber == 3030)
+		{
+			return true;
+		} else if (busNumber == 3020)
+		{
+			return true;
+		} else if (busNumber == 3028)
+		{
+			return true;
+		} else if (busNumber == 3031)
+		{
+			return true;
+		}
+
+		return false;
+	}
+
+	public static void sendSMS(int busTime, int busNumber, int stopNumber, TwilioRestClient client) 
+	{
+
+		// Build a filter for the MessageList
+		List<NameValuePair> params = new ArrayList<NameValuePair>();
+		params.add(new BasicNameValuePair("Body", (getBusName(busNumber) + " will be at " + getStopName(stopNumber) + 
+				" stop in " + busTime + " minutes!")));
+		params.add(new BasicNameValuePair("To", "+17326429205"));
+		params.add(new BasicNameValuePair("From", "+17342355035"));
+
+		MessageFactory messageFactory = client.getAccount().getMessageFactory();
+		try {
+			Message message = messageFactory.create(params);
+		} catch (TwilioRestException e) {
+			System.out.println(e.getErrorMessage());
+		}		
+	}
+
+	public static boolean stopActive(JSONArray incomingBusArray)
+	{
+		if(incomingBusArray.length() == 0)
+		{
+			return false;
+		} else 
+		{
+			return true;
+		}
+	}
+
+	public static String getJSONString(URL url)
+	{
+		String output = "";
+		try
+		{
+			BufferedReader br = new BufferedReader(new InputStreamReader(url.openStream()));
+			output = br.readLine();
+			output = fixJSON(output);	
+		} catch (Exception ex) {
+			ex.printStackTrace();
+		}
+
+		return output;
+	}
+
+	public static int getBusArrayIndex(JSONArray incomingBusesArray)
+	{
+		int index = -1;
+		try 
+		{
+			for(int i = 0; i < incomingBusesArray.length(); i++)
+			{
+				if(isNwx(incomingBusesArray.getJSONObject(0).getInt("bus_id")))
+				{
+					index = i;
+					break;
+				}
+			}
+
+			if(index == -1)
+			{
+				System.out.println("The stop is active, but none of your bus numbers are coming.");
+				System.exit(0);
+			}
+		} catch (Exception ex) {
+			ex.printStackTrace();
+		}
+
+		return index;
+	}
+
+	public static boolean shouldSleep() {
+		LocalDateTime localNow = LocalDateTime.now();
+		System.out.println("local: " + localNow)
+;		ZoneId currentZone = ZoneId.of("America/Detroit"); //get time	
+		ZonedDateTime zonedNow = ZonedDateTime.of(localNow, currentZone);
+		System.out.println("zoned: " + zonedNow);
+
+		DayOfWeek day = zonedNow.getDayOfWeek();
+		int dayValue = day.getValue(); 
+
+
+/*
+		if(dayValue == 6) //sleep for the weekend
+		{
+			try{
+				System.out.println("Sleep for the weekend minutes. dayValue = " + dayValue);
+				Thread.sleep(1000 * 60 * 60 * 48);
+			}catch(InterruptedException e){
+				System.out.println("got interrupted!");
+			}
+			return true;
+		} 
+
+		float hour = zonedNow.getHour();
+		float minute = zonedNow.getMinute();
+		float time = hour + (minute/60);
+		float sleepHours = 0;
+		float sleepMinutes = 0;
+
+		int beginTime = 10;
+		int endTime = 11;
+
+		if(time < beginTime) {
+			sleepHours = (int)(beginTime - hour);
+			sleepMinutes = (int)(60 - minute);
+			System.out.println("Sleep for " + sleepHours + " hours and " + sleepMinutes + " minutes.");
+
+			sleepHours = sleepHours * 1000 * 60 * 60;
+			sleepMinutes = sleepMinutes * 1000 * 60;
+			long sleep = (long)sleepHours + (long)sleepMinutes;
+
+			try {
+				Thread.sleep(1000 * 60 * 60 * sleep);	
+			}catch(InterruptedException e){
+				System.out.println("got interrupted!");
+			} 
+			return true;
+		} else if (time > endTime) {
+			sleepHours = (int)(23 - hour) + (int)(beginTime);
+			sleepMinutes = (int)(60 - minute);
+			System.out.println("Sleep for " + sleepHours + " hours and " + sleepMinutes + " minutes.");
+
+			sleepHours = sleepHours * 1000 * 60 * 60;
+			sleepMinutes = sleepMinutes * 1000 * 60; 
+			long sleep = (long)sleepHours + (long)sleepMinutes;
+
+
+			try {
+				Thread.sleep(1000 * 60 * 60 * sleep);	
+			}catch(InterruptedException e){
+				System.out.println("got interrupted!");
+			} 
+			return true; 
+		}
+
+		int specialTime = 45;
+		hour = zonedNow.getHour();
+		minute = zonedNow.getMinute();
+		if(minute < specialTime) {
+			sleepMinutes = (specialTime - minute);
+			System.out.println("Sleep for " + sleepMinutes + " minutes.");
+
+			sleepMinutes = sleepMinutes * 1000 * 60;
+			long sleep = (long)sleepMinutes;
+
+			try {
+				Thread.sleep(1000 * 60 * 60 * sleep);	
+			}catch(InterruptedException e){
+				System.out.println("got interrupted!");
+			}
+			return true;
+		}*/
+		return false;
+	}
+}

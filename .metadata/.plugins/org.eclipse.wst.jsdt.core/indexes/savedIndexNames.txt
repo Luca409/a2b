@@ -1,0 +1,6 @@
+INDEX VERSION 1.3+/Users/LucaLoncar/Desktop/BlueBus Texts/.metadata/.plugins/org.eclipse.wst.jsdt.core/indexes
+3300924828.index
+660411889.index
+2672698957.index
+2582308078.index
+3265008447.index
